@@ -26,6 +26,12 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
+import {
+  FaDiscord,
+  FaGithub,
+  FaTiktok,
+  FaYoutube,
+} from 'react-icons/fa6';
 import { Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 
 const queryClient = new QueryClient();
@@ -429,9 +435,9 @@ function Home() {
         )}
       </section>
 
-      <nav ref={socialDrag.panelRef} className="actions" aria-label="Profile links">
+      <nav ref={socialDrag.panelRef} className="actions" aria-label="Social links and profile actions">
         <div className="mini-window-bar social-window-bar">
-          <span className="window-label">LINKS</span>
+          <span className="window-label">SOCIAL LINKS</span>
           <button
             type="button"
             className="drag-handle"
@@ -441,6 +447,48 @@ function Home() {
           >
             <GripHorizontal size={15} aria-hidden="true" />
           </button>
+        </div>
+        <div className="social-icons" aria-label="Social profiles">
+          <a
+            className="social-icon"
+            href="https://discord.com/users/1153432454980448381"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Discord profile for wsp_hey_areuok_yes"
+            title="Discord · wsp_hey_areuok_yes"
+          >
+            <FaDiscord aria-hidden="true" />
+          </a>
+          <a
+            className="social-icon"
+            href="https://m.youtube.com/@CocoX.W_tf?ra=m"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="YouTube channel CocoX.W_tf"
+            title="YouTube · @CocoX.W_tf"
+          >
+            <FaYoutube aria-hidden="true" />
+          </a>
+          <a
+            className="social-icon"
+            href="https://www.tiktok.com/@cocox.wtf"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="TikTok profile @cocox.wtf"
+            title="TikTok · @cocox.wtf"
+          >
+            <FaTiktok aria-hidden="true" />
+          </a>
+          <a
+            className="social-icon"
+            href="https://github.com/cococatnice-star"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="GitHub profile cococatnice-star"
+            title="GitHub · cococatnice-star"
+          >
+            <FaGithub aria-hidden="true" />
+          </a>
         </div>
         <div className="action-links">
           <button className="action-button" onClick={() => setAboutOpen(true)}>
