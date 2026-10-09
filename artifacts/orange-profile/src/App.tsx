@@ -1,13 +1,26 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import {
+  Check,
+  ChevronDown,
   ExternalLink,
+  FastForward,
+  GripHorizontal,
   Pause,
   Play,
+  Rewind,
   UserRound,
   Volume2,
   VolumeX,
@@ -29,6 +42,115 @@ function formatTime(seconds: number) {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60).toString().padStart(2, '0');
   return `${mins}:${secs}`;
+}
+
+function useDraggable() {
+  const panelRef = useRef<HTMLElement | null>(null);
+  const offsetRef = useRef({ x: 0, y: 0 });
+  const dragRef = useRef<{
+    pointerId: number;
+    pointerX: number;
+    pointerY: number;
+    offsetX: number;
+    offsetY: number;
+    bounds: { left: number; top: number; right: number; bottom: number };
+  } | null>(null);
+  const panelRefCallback = useCallback((node: HTMLElement | null) => {
+    panelRef.current = node;
+    if (!node) return;
+    node.style.setProperty('--drag-x', `${offsetRef.current.x}px`);
+    node.style.setProperty('--drag-y', `${offsetRef.current.y}px`);
+  }, []);
+
+  const applyPosition = (x: number, y: number) => {
+    offsetRef.current = { x, y };
+    panelRef.current?.style.setProperty('--drag-x', `${x}px`);
+    panelRef.current?.style.setProperty('--drag-y', `${y}px`);
+  };
+
+  const finishDrag = (event?: ReactPointerEvent<HTMLButtonElement>) => {
+    const panel = panelRef.current;
+    const drag = dragRef.current;
+    panel?.classList.remove('is-dragging');
+    if (
+      event &&
+      drag?.pointerId === event.pointerId &&
+      event.currentTarget.hasPointerCapture(event.pointerId)
+    ) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    dragRef.current = null;
+  };
+
+  const dragHandleProps = {
+    onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (!event.isPrimary || event.button !== 0 || !panelRef.current) return;
+      event.preventDefault();
+      const bounds = panelRef.current.getBoundingClientRect();
+      dragRef.current = {
+        pointerId: event.pointerId,
+        pointerX: event.clientX,
+        pointerY: event.clientY,
+        offsetX: offsetRef.current.x,
+        offsetY: offsetRef.current.y,
+        bounds: {
+          left: bounds.left - offsetRef.current.x,
+          top: bounds.top - offsetRef.current.y,
+          right: bounds.right - offsetRef.current.x,
+          bottom: bounds.bottom - offsetRef.current.y,
+        },
+      };
+      panelRef.current.classList.add('is-dragging');
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    onPointerMove: (event: ReactPointerEvent<HTMLButtonElement>) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      const padding = 20;
+      const nextX = drag.offsetX + event.clientX - drag.pointerX;
+      const nextY = drag.offsetY + event.clientY - drag.pointerY;
+      const minX = padding - drag.bounds.left;
+      const maxX = window.innerWidth - padding - drag.bounds.right;
+      const minY = padding - drag.bounds.top;
+      const maxY = window.innerHeight - padding - drag.bounds.bottom;
+      applyPosition(
+        Math.min(Math.max(nextX, minX), Math.max(minX, maxX)),
+        Math.min(Math.max(nextY, minY), Math.max(minY, maxY)),
+      );
+    },
+    onPointerUp: (event: ReactPointerEvent<HTMLButtonElement>) => finishDrag(event),
+    onPointerCancel: (event: ReactPointerEvent<HTMLButtonElement>) => finishDrag(event),
+    onLostPointerCapture: () => finishDrag(),
+    onKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+      const step = event.shiftKey ? 32 : 16;
+      let dx = 0;
+      let dy = 0;
+      if (event.key === 'ArrowLeft') dx = -step;
+      else if (event.key === 'ArrowRight') dx = step;
+      else if (event.key === 'ArrowUp') dy = -step;
+      else if (event.key === 'ArrowDown') dy = step;
+      else return;
+
+      event.preventDefault();
+      const panel = panelRef.current;
+      if (!panel) return;
+      const bounds = panel.getBoundingClientRect();
+      const baseLeft = bounds.left - offsetRef.current.x;
+      const baseTop = bounds.top - offsetRef.current.y;
+      const baseRight = bounds.right - offsetRef.current.x;
+      const baseBottom = bounds.bottom - offsetRef.current.y;
+      const minX = 20 - baseLeft;
+      const maxX = window.innerWidth - 20 - baseRight;
+      const minY = 20 - baseTop;
+      const maxY = window.innerHeight - 20 - baseBottom;
+      applyPosition(
+        Math.min(Math.max(offsetRef.current.x + dx, minX), Math.max(minX, maxX)),
+        Math.min(Math.max(offsetRef.current.y + dy, minY), Math.max(minY, maxY)),
+      );
+    },
+  };
+
+  return { panelRef: panelRefCallback, dragHandleProps };
 }
 
 function CursorFollower() {
@@ -79,6 +201,7 @@ function CursorFollower() {
 
 function Home() {
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [selectorOpen, setSelectorOpen] = useState(false);
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(0.72);
   const [playing, setPlaying] = useState(false);
@@ -86,7 +209,11 @@ function Home() {
   const [duration, setDuration] = useState(0);
   const [audioMessage, setAudioMessage] = useState('');
   const audioRef = useRef<HTMLAudioElement>(null);
+  const profileCardRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const musicDrag = useDraggable();
+  const socialDrag = useDraggable();
+  const aboutDrag = useDraggable();
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -135,14 +262,60 @@ function Home() {
     }
   };
 
+  const handleProfilePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== 'mouse') return;
+    const card = event.currentTarget;
+    const bounds = card.getBoundingClientRect();
+    const x = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
+    const y = Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height));
+
+    card.style.setProperty('--tilt-x', `${((x - 0.5) * 10).toFixed(2)}deg`);
+    card.style.setProperty('--tilt-y', `${((0.5 - y) * 8).toFixed(2)}deg`);
+    card.style.setProperty('--glow-x', `${(x * 100).toFixed(1)}%`);
+    card.style.setProperty('--glow-y', `${(y * 100).toFixed(1)}%`);
+    card.classList.add('is-tilting');
+  };
+
+  const resetProfileTilt = () => {
+    const card = profileCardRef.current;
+    if (!card) return;
+    card.style.setProperty('--tilt-x', '0deg');
+    card.style.setProperty('--tilt-y', '0deg');
+    card.classList.remove('is-tilting');
+  };
+
+  const seekBy = (seconds: number) => {
+    const audio = audioRef.current;
+    if (!audio || !Number.isFinite(audio.duration)) return;
+    audio.currentTime = Math.max(0, Math.min(audio.duration, audio.currentTime + seconds));
+  };
+
+  const selectCurrentTrack = async () => {
+    const audio = audioRef.current;
+    setSelectorOpen(false);
+    if (!audio) return;
+    audio.currentTime = 0;
+    if (audio.paused) await togglePlayback();
+  };
+
   return (
     <main className="profile-stage" aria-label="Orange Profile">
-      <div className="profile-card" aria-label={`Discord profile: ${PROFILE.username}`}>
+      <div
+        ref={profileCardRef}
+        className="profile-card"
+        aria-label={`Discord profile: ${PROFILE.username}`}
+        onPointerMove={handleProfilePointerMove}
+        onPointerLeave={resetProfileTilt}
+      >
         <img className="profile-avatar" src={PROFILE_AVATAR} alt={`${PROFILE.username} profile picture`} />
         <span className="profile-name">{PROFILE.username}</span>
       </div>
 
-      <section className="player-card" aria-label="Misery music player">
+      <section
+        ref={musicDrag.panelRef}
+        className={`player-card${playing ? ' is-playing' : ''}`}
+        aria-label="Misery music player"
+      >
         <audio
           ref={audioRef}
           src={MUSIC_SOURCE}
@@ -154,20 +327,47 @@ function Home() {
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
         />
+        <div className="mini-window-bar player-window-bar">
+          <span className="window-label">MUSIC PLAYER</span>
+          <button
+            type="button"
+            className="drag-handle"
+            aria-label="Move music player; use arrow keys to move"
+            title="Drag or use arrow keys to move"
+            {...musicDrag.dragHandleProps}
+          >
+            <GripHorizontal size={15} aria-hidden="true" />
+          </button>
+        </div>
         <div className="player-row">
-          <div className="track-info">
-            <img className="mini-art" src={MUSIC_COVER} alt="Misery cover art" />
-            <div className="track-label">
+          <button
+            className="track-select"
+            aria-label="Open music selector"
+            aria-expanded={selectorOpen}
+            aria-controls="track-selector"
+            onClick={() => setSelectorOpen((open) => !open)}
+          >
+            <img className="mini-art" src={MUSIC_COVER} alt="" />
+            <span className="track-label">
               <span className="track-title">Misery</span>
               <span className="track-subtitle">PUPSIES · MISERY</span>
-            </div>
-          </div>
-          <button className="player-button play-button" aria-label={playing ? 'Pause music' : 'Play music'} onClick={() => void togglePlayback()}>
-            {playing ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
+            </span>
+            <ChevronDown className="selector-chevron" size={14} aria-hidden="true" />
           </button>
+          <div className="transport-controls" aria-label="Playback controls">
+            <button className="player-button" aria-label="Rewind 10 seconds" onClick={() => seekBy(-10)}>
+              <Rewind size={15} />
+            </button>
+            <button className="play-button" aria-label={playing ? 'Pause music' : 'Play music'} onClick={() => void togglePlayback()}>
+              {playing ? <Pause size={17} fill="currentColor" /> : <Play size={17} fill="currentColor" />}
+            </button>
+            <button className="player-button" aria-label="Forward 10 seconds" onClick={() => seekBy(10)}>
+              <FastForward size={15} />
+            </button>
+          </div>
           <div className="volume-wrap">
             <button className="player-button" aria-label={muted ? 'Unmute' : 'Mute'} onClick={() => setMuted((value) => !value)}>
-              {muted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+              {muted ? <VolumeX size={15} /> : <Volume2 size={15} />}
             </button>
             <input
               aria-label="Volume"
@@ -181,52 +381,105 @@ function Home() {
             />
           </div>
         </div>
-        <div
-          className="progress-line"
-          role="slider"
-          aria-label="Track position"
-          aria-valuemin={0}
-          aria-valuemax={duration || 0}
-          aria-valuenow={currentTime}
-          aria-valuetext={`${formatTime(currentTime)} of ${formatTime(duration)}`}
-          tabIndex={0}
-          onClick={(event) => {
-            if (!audioRef.current || !duration) return;
-            const bounds = event.currentTarget.getBoundingClientRect();
-            audioRef.current.currentTime = ((event.clientX - bounds.left) / bounds.width) * duration;
-          }}
-          onKeyDown={(event) => {
-            if (!audioRef.current) return;
-            if (event.key === 'ArrowRight') audioRef.current.currentTime = Math.min(duration, currentTime + 5);
-            if (event.key === 'ArrowLeft') audioRef.current.currentTime = Math.max(0, currentTime - 5);
-          }}
-        >
-          <div className="progress-fill" style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }} />
-        </div>
         <div className="player-extras">
-          <span className="track-subtitle">{formatTime(currentTime)} / {formatTime(duration)}</span>
+          <span>{formatTime(currentTime)}</span>
+          <div
+            className="progress-line"
+            role="slider"
+            aria-label="Track position"
+            aria-valuemin={0}
+            aria-valuemax={duration || 0}
+            aria-valuenow={currentTime}
+            aria-valuetext={`${formatTime(currentTime)} of ${formatTime(duration)}`}
+            tabIndex={0}
+            onClick={(event) => {
+              if (!audioRef.current || !duration) return;
+              const bounds = event.currentTarget.getBoundingClientRect();
+              const progress = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
+              audioRef.current.currentTime = progress * duration;
+            }}
+            onKeyDown={(event) => {
+              if (!audioRef.current) return;
+              if (event.key === 'ArrowRight') audioRef.current.currentTime = Math.min(duration, currentTime + 5);
+              if (event.key === 'ArrowLeft') audioRef.current.currentTime = Math.max(0, currentTime - 5);
+            }}
+          >
+            <div className="progress-fill" style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }} />
+          </div>
+          <span>{formatTime(duration)}</span>
         </div>
         {audioMessage && <p className="player-hint" role="status">{audioMessage}</p>}
+        {selectorOpen && (
+          <div className="track-selector" id="track-selector" aria-label="Music selector">
+            <div className="selector-heading">
+              <span>Music library</span>
+              <span>1 TRACK</span>
+            </div>
+            <button className="selector-track" onClick={() => void selectCurrentTrack()}>
+              <img src={MUSIC_COVER} alt="" />
+              <span className="selector-track-copy">
+                <span className="track-title">Misery</span>
+                <span className="track-subtitle">PUPSIES · MISERY</span>
+              </span>
+              <span className={`selector-track-state${playing ? ' is-current' : ''}`}>
+                {playing ? <span className="playing-bars" aria-label="Now playing"><i /><i /><i /></span> : <Check size={15} />}
+              </span>
+            </button>
+          </div>
+        )}
       </section>
 
-      <nav className="actions" aria-label="Profile links">
-        <button className="action-button" onClick={() => setAboutOpen(true)}>
-          <UserRound size={12} strokeWidth={1.8} /> About Me
-        </button>
-        <a className="action-button" href="https://cocox.wtf" target="_blank" rel="noreferrer">
-          <ExternalLink size={12} strokeWidth={1.8} /> Main Website
-        </a>
+      <nav ref={socialDrag.panelRef} className="actions" aria-label="Profile links">
+        <div className="mini-window-bar social-window-bar">
+          <span className="window-label">LINKS</span>
+          <button
+            type="button"
+            className="drag-handle"
+            aria-label="Move social links; use arrow keys to move"
+            title="Drag or use arrow keys to move"
+            {...socialDrag.dragHandleProps}
+          >
+            <GripHorizontal size={15} aria-hidden="true" />
+          </button>
+        </div>
+        <div className="action-links">
+          <button className="action-button" onClick={() => setAboutOpen(true)}>
+            <UserRound size={12} strokeWidth={1.8} /> About Me
+          </button>
+          <a className="action-button" href="https://cocox.wtf" target="_blank" rel="noreferrer">
+            <ExternalLink size={12} strokeWidth={1.8} /> Main Website
+          </a>
+        </div>
       </nav>
 
       {aboutOpen && (
         <div className="about-backdrop" onMouseDown={(event) => {
           if (event.target === event.currentTarget) setAboutOpen(false);
         }}>
-          <section className="about-panel" role="dialog" aria-modal="true" aria-labelledby="about-title">
-            <button ref={closeRef} className="close-about" aria-label="Close About Me" onClick={() => setAboutOpen(false)}>
-              <X size={16} />
-            </button>
-            <div className="about-kicker">A little about me</div>
+          <section
+            ref={aboutDrag.panelRef}
+            className="about-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="about-title"
+          >
+            <div className="mini-window-bar about-window-bar">
+              <div className="about-kicker">A little about me</div>
+              <div className="window-controls">
+                <button
+                  type="button"
+                  className="drag-handle"
+                  aria-label="Move About Me panel; use arrow keys to move"
+                  title="Drag or use arrow keys to move"
+                  {...aboutDrag.dragHandleProps}
+                >
+                  <GripHorizontal size={15} aria-hidden="true" />
+                </button>
+                <button ref={closeRef} className="close-about" aria-label="Close About Me" onClick={() => setAboutOpen(false)}>
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
             <h1 id="about-title">Hey, I’m {PROFILE.username}.</h1>
             <p>I’ve been coding for about two years. I know how to code Roblox and Unity scripts, and how to make games.</p>
             <p>I like making devices and coding programs and apps. I also make exploits for Roblox.</p>
