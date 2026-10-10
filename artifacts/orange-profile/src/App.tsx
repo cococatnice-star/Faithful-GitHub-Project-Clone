@@ -11,6 +11,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { toast } from '@/hooks/use-toast';
 import NotFound from '@/pages/not-found';
 import {
   Check,
@@ -290,13 +291,29 @@ function Home() {
         await audio.play();
         setPlaying(true);
         setAudioMessage('');
+        toast({
+          title: 'Music resumed',
+          description: currentTrack.title,
+          duration: 2800,
+        });
       } catch {
         setAudioMessage('Playback was blocked. Tap Play to try again.');
         setPlaying(false);
+        toast({
+          title: 'Music could not start',
+          description: 'Tap Play again to retry.',
+          variant: 'destructive',
+          duration: 4200,
+        });
       }
     } else {
       audio.pause();
       setPlaying(false);
+      toast({
+        title: 'Music paused',
+        description: currentTrack.title,
+        duration: 2400,
+      });
     }
   };
 
@@ -344,9 +361,20 @@ function Home() {
     try {
       await audio.play();
       setPlaying(true);
+      toast({
+        title: 'Now playing',
+        description: `${track.title} · ${track.subtitle.split(' · ')[0]}`,
+        duration: 3600,
+      });
     } catch {
       setPlaying(false);
       setAudioMessage('Playback was blocked. Tap Play to try again.');
+      toast({
+        title: 'Track could not start',
+        description: 'Tap Play to try again.',
+        variant: 'destructive',
+        duration: 4200,
+      });
     }
   };
 
@@ -362,9 +390,20 @@ function Home() {
       void audioRef.current.play().then(() => {
         setPlaying(true);
         setAudioMessage('');
+        toast({
+          title: 'Music resumed',
+          description: currentTrack.title,
+          duration: 2800,
+        });
       }).catch(() => {
         setPlaying(false);
         setAudioMessage('Playback was blocked. Tap Play to resume the music.');
+        toast({
+          title: 'Music could not resume',
+          description: 'Tap Play to restart the track.',
+          variant: 'destructive',
+          duration: 4200,
+        });
       });
     }
     resumeMusicAfterVideoRef.current = false;
@@ -397,8 +436,20 @@ function Home() {
         video.currentTime = 0;
         setVideoMessage('');
         setVideoOpen(true);
-        void video.play().catch(() => {
+        void video.play().then(() => {
+          toast({
+            title: 'Video playing',
+            description: 'Press Esc or use the close button to exit.',
+            duration: 3600,
+          });
+        }).catch(() => {
           setVideoMessage('Press Play in the video controls to start playback.');
+          toast({
+            title: 'Video playback blocked',
+            description: 'Press Play in the video controls to start.',
+            variant: 'destructive',
+            duration: 4200,
+          });
         });
         return;
       }
