@@ -225,11 +225,13 @@ function Home() {
     const audio = audioRef.current;
     if (!audio) return;
 
+    audio.muted = muted;
+    audio.volume = volume;
     void audio.play().then(() => {
       setPlaying(true);
       setAudioMessage('');
     }).catch(() => {
-      setAudioMessage('Tap play to start the music.');
+      setAudioMessage('Your browser blocked audio autoplay. Tap Play to start the music.');
     });
   }, []);
 
@@ -259,7 +261,7 @@ function Home() {
         setPlaying(true);
         setAudioMessage('');
       } catch {
-        setAudioMessage('Tap play to start the music.');
+        setAudioMessage('Playback was blocked. Tap Play to try again.');
         setPlaying(false);
       }
     } else {
@@ -330,7 +332,10 @@ function Home() {
           onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
           onDurationChange={(event) => setDuration(event.currentTarget.duration)}
           onEnded={() => setPlaying(false)}
-          onPlay={() => setPlaying(true)}
+          onPlay={() => {
+            setPlaying(true);
+            setAudioMessage('');
+          }}
           onPause={() => setPlaying(false)}
         />
         <div className="mini-window-bar player-window-bar">
