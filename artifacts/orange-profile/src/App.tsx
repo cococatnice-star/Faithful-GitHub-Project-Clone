@@ -39,8 +39,32 @@ const PROFILE = {
   username: 'CocoX.wtf',
 };
 
-const MUSIC_SOURCE = `${import.meta.env.BASE_URL}audio/misery.mp3`;
-const MUSIC_COVER = `${import.meta.env.BASE_URL}images/misery-cover.png`;
+type MusicTrack = {
+  id: string;
+  title: string;
+  subtitle: string;
+  source: string;
+  cover: string;
+};
+
+const MUSIC_TRACKS: MusicTrack[] = [
+  {
+    id: 'misery',
+    title: 'Misery',
+    subtitle: 'PUPSIES · MISERY',
+    source: `${import.meta.env.BASE_URL}audio/misery.mp3`,
+    cover: `${import.meta.env.BASE_URL}images/misery-cover.png`,
+  },
+  {
+    id: 'all-i-want-for-christmas',
+    title: 'All I Want for Christmas Is You',
+    subtitle: 'MARIAH CAREY · CHRISTMAS',
+    source: `${import.meta.env.BASE_URL}audio/all-i-want-for-christmas.mp3`,
+    cover: `${import.meta.env.BASE_URL}images/all-i-want-for-christmas.jpg`,
+  },
+];
+
+const VIDEO_SOURCE = `${import.meta.env.BASE_URL}video/cocox-clip.mp4`;
 const PROFILE_AVATAR = `${import.meta.env.BASE_URL}images/profile-cocox.png`;
 
 function formatTime(seconds: number) {
@@ -211,10 +235,16 @@ function Home() {
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(0.72);
   const [playing, setPlaying] = useState(false);
+  const [currentTrack, setCurrentTrack] = useState(MUSIC_TRACKS[0]);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [audioMessage, setAudioMessage] = useState('');
+  const [videoOpen, setVideoOpen] = useState(false);
+  const [videoMessage, setVideoMessage] = useState('');
   const audioRef = useRef<HTMLAudioElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoCloseRef = useRef<HTMLButtonElement>(null);
+  const resumeMusicAfterVideoRef = useRef(false);
   const profileCardRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const musicDrag = useDraggable();
@@ -298,13 +328,87 @@ function Home() {
     audio.currentTime = Math.max(0, Math.min(audio.duration, audio.currentTime + seconds));
   };
 
-  const selectCurrentTrack = async () => {
+  const selectTrack = async (track: MusicTrack) => {
     const audio = audioRef.current;
     setSelectorOpen(false);
     if (!audio) return;
+
+    setCurrentTrack(track);
     audio.currentTime = 0;
-    if (audio.paused) await togglePlayback();
+    setCurrentTime(0);
+    setDuration(0);
+    setAudioMessage('');
+    audio.pause();
+    audio.src = track.source;
+    audio.load();
+    try {
+      await audio.play();
+      setPlaying(true);
+    } catch {
+      setPlaying(false);
+      setAudioMessage('Playback was blocked. Tap Play to try again.');
+    }
   };
+
+  const closeVideo = () => {
+    const video = videoRef.current;
+    if (video) {
+      video.pause();
+      video.currentTime = 0;
+    }
+    setVideoOpen(false);
+    setVideoMessage('');
+    if (resumeMusicAfterVideoRef.current && audioRef.current) {
+      void audioRef.current.play().then(() => {
+        setPlaying(true);
+        setAudioMessage('');
+      }).catch(() => {
+        setPlaying(false);
+        setAudioMessage('Playback was blocked. Tap Play to resume the music.');
+      });
+    }
+    resumeMusicAfterVideoRef.current = false;
+  };
+
+  useEffect(() => {
+    if (videoOpen) videoCloseRef.current?.focus();
+  }, [videoOpen]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      const isEditing =
+        target instanceof HTMLElement &&
+        (target.isContentEditable || target.matches('input, textarea, select'));
+
+      if (
+        event.ctrlKey &&
+        event.shiftKey &&
+        !event.altKey &&
+        (event.code === 'Period' || event.key === '>' || event.key === '.') &&
+        !isEditing
+      ) {
+        event.preventDefault();
+        const video = videoRef.current;
+        if (!video) return;
+        const audio = audioRef.current;
+        if (!videoOpen) resumeMusicAfterVideoRef.current = Boolean(audio && !audio.paused);
+        audio?.pause();
+        video.currentTime = 0;
+        setVideoMessage('');
+        setVideoOpen(true);
+        void video.play().catch(() => {
+          setVideoMessage('Press Play in the video controls to start playback.');
+        });
+        return;
+      }
+
+      if (event.key === 'Escape' && videoOpen) closeVideo();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [videoOpen]);
 
   return (
     <main className="profile-stage" aria-label="Orange Profile">
@@ -322,11 +426,11 @@ function Home() {
       <section
         ref={musicDrag.panelRef}
         className={`player-card${playing ? ' is-playing' : ''}`}
-        aria-label="Misery music player"
+        aria-label={`Music player: ${currentTrack.title}`}
       >
         <audio
           ref={audioRef}
-          src={MUSIC_SOURCE}
+          src={currentTrack.source}
           preload="auto"
           autoPlay
           onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
@@ -358,10 +462,10 @@ function Home() {
             aria-controls="track-selector"
             onClick={() => setSelectorOpen((open) => !open)}
           >
-            <img className="mini-art" src={MUSIC_COVER} alt="" />
+            <img className="mini-art" src={currentTrack.cover} alt="" />
             <span className="track-label">
-              <span className="track-title">Misery</span>
-              <span className="track-subtitle">PUPSIES · MISERY</span>
+              <span className="track-title">{currentTrack.title}</span>
+              <span className="track-subtitle">{currentTrack.subtitle}</span>
             </span>
             <ChevronDown className="selector-chevron" size={14} aria-hidden="true" />
           </button>
@@ -424,18 +528,33 @@ function Home() {
           <div className="track-selector" id="track-selector" aria-label="Music selector">
             <div className="selector-heading">
               <span>Music library</span>
-              <span>1 TRACK</span>
+              <span>{MUSIC_TRACKS.length} TRACKS</span>
             </div>
-            <button className="selector-track" onClick={() => void selectCurrentTrack()}>
-              <img src={MUSIC_COVER} alt="" />
-              <span className="selector-track-copy">
-                <span className="track-title">Misery</span>
-                <span className="track-subtitle">PUPSIES · MISERY</span>
-              </span>
-              <span className={`selector-track-state${playing ? ' is-current' : ''}`}>
-                {playing ? <span className="playing-bars" aria-label="Now playing"><i /><i /><i /></span> : <Check size={15} />}
-              </span>
-            </button>
+            {MUSIC_TRACKS.map((track) => {
+              const isCurrent = track.id === currentTrack.id;
+              return (
+                <button
+                  key={track.id}
+                  className="selector-track"
+                  aria-pressed={isCurrent}
+                  aria-label={`Play ${track.title} by ${track.subtitle.split(' · ')[0]}`}
+                  onClick={() => void selectTrack(track)}
+                >
+                  <img src={track.cover} alt="" />
+                  <span className="selector-track-copy">
+                    <span className="track-title">{track.title}</span>
+                    <span className="track-subtitle">{track.subtitle}</span>
+                  </span>
+                  <span className={`selector-track-state${isCurrent ? ' is-current' : ''}`}>
+                    {isCurrent && playing
+                      ? <span className="playing-bars" aria-label="Now playing"><i /><i /><i /></span>
+                      : isCurrent
+                        ? <Check size={15} />
+                        : <Play size={14} />}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         )}
       </section>
@@ -503,6 +622,10 @@ function Home() {
             <ExternalLink size={12} strokeWidth={1.8} /> Main Website
           </a>
         </div>
+        <div className="video-shortcut-hint" aria-label="Keyboard shortcut to play the video">
+          <span>PLAY VIDEO</span>
+          <kbd>CTRL</kbd><b>+</b><kbd>SHIFT</kbd><b>+</b><kbd>.</kbd>
+        </div>
       </nav>
 
       {aboutOpen && (
@@ -540,6 +663,44 @@ function Home() {
           </section>
         </div>
       )}
+      <div
+        className={`video-backdrop${videoOpen ? ' is-open' : ''}`}
+        role="dialog"
+        aria-modal={videoOpen}
+        aria-label="CocoX video player"
+        aria-hidden={!videoOpen}
+        onPointerDown={(event) => {
+          if (event.target === event.currentTarget) closeVideo();
+        }}
+      >
+        <section className="video-window">
+          <div className="video-window-header">
+            <div className="video-window-title">
+              <span className="window-label">COCOX VIDEO</span>
+              <span className="video-window-shortcut">CTRL + SHIFT + .</span>
+            </div>
+            <button
+              ref={videoCloseRef}
+              type="button"
+              className="close-video"
+              aria-label="Close video"
+              onClick={closeVideo}
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <video
+            ref={videoRef}
+            className="profile-video"
+            src={VIDEO_SOURCE}
+            controls
+            playsInline
+            preload="none"
+            onError={() => setVideoMessage('The video could not be loaded.')}
+          />
+          {videoMessage && <p className="video-message" role="status">{videoMessage}</p>}
+        </section>
+      </div>
       <CursorFollower />
     </main>
   );
